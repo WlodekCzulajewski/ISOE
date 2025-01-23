@@ -37,7 +37,7 @@ lodowka = Urzadzenie(
     moc_namionowa=120,
     zuzycie_pradu_na_cykl=0,
     dlugosc_cyklu=0,
-    pobor_mocy_czuwania=1.0
+    pobor_mocy_czuwania=46
 )
 
 pralka = Urzadzenie(
