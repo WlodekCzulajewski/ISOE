@@ -21,16 +21,10 @@ def oblicz_generacje_energii(ghi, temperatura, kat_nachylenia, azymut, sprawnosc
     Returns:
     float - Szacowana ilość wyprodukowanej energii (kWh)
     """
-    # Korekta kąta nachylenia i azymutu na wydajność w stosunku do GHI
     wspolczynnik_orientacji = math.cos(math.radians(kat_nachylenia)) * math.cos(math.radians(azymut - 180))
-
-    # Efektywne promieniowanie na całą powierzchnię instalacji
     efektywne_promieniowanie = ghi * powierzchnia * wspolczynnik_orientacji
-
-    # Korekta strat systemowych, sprawności i wpływu cienia
     efektywna_moc = efektywne_promieniowanie * sprawnosc * (1 - straty_systemowe) * wspolczynnik_cienia
-
-    return max(efektywna_moc, 0)  # Moc nie może być ujemna
+    return max(efektywna_moc, 0)
 
 
 # Parametry paneli fotowoltaicznych
@@ -38,14 +32,8 @@ moc_pojedynczego_panelu = 320  # W
 liczba_paneli = 18
 szerokosc_panelu = 0.992  # m
 dlugosc_panelu = 1.668  # m
-
-# Całkowita moc instalacji
 moc_nominalna = (moc_pojedynczego_panelu * liczba_paneli) / 1000  # kW
-print(f"Całkowita moc instalacji: {moc_nominalna:.2f} kW")
-
-# Całkowite pole instalacji
 pole_instalacji = liczba_paneli * szerokosc_panelu * dlugosc_panelu  # m²
-print(f"Całkowite pole instalacji: {pole_instalacji:.2f} m²")
 
 # Parametry instalacji fotowoltaicznej
 kat_nachylenia = 26  # stopnie
@@ -53,74 +41,72 @@ azymut = 180  # stopnie
 sprawnosc = 0.1934  # 19.34% sprawności
 straty_systemowe = 0.14  # 14% strat dla instalacji 4-letniej
 
-# Załaduj dane horyzontu
-with open('dane_historyczne/horyzont_2024.json', 'r') as f:
-    dane_horyzontu = json.load(f)
+# Parametry dla cienia
+wysokosc_budynku = 13  # m
+wysokosc_drzewa = 27  # m
+odleglosc_drzewa = 10  # m
 
-# Dane o cieniu na podstawie horyzontu
-def uwzglednij_cien(czas):
-    """
-    Uwzględnia cień spadający na panele do godziny 10:30.
+# Wczytaj dane elewacji i azymutu słońca
+dane_elewacja_azymut = pd.read_csv('dane_historyczne/roczna_elewacja_azymut_slonca_2024.csv', delimiter=',')
 
-    Parameters:
-    czas: datetime - Czas do sprawdzenia
-
-    Returns:
-    float - Współczynnik redukcji efektywności (0-1)
-    """
-    godzina = czas.hour + czas.minute / 60  # Przekształcenie na godzinę dziesiętną
-    if godzina <= 9:  # Cień przed 10:30
-        return 0.5  # Redukcja o 50%
-    elif godzina <= 11:  # Cień przed 10:30
-        return 0.6  # Redukcja o 50%
-    elif godzina <= 12:  # Cień przed 10:30
-        return 0.4  # Redukcja o 50%
-    return 1.0  # Brak redukcji
+# Funkcja do obliczenia współczynnika cienia dla paneli wschodnich
+def oblicz_cien_wschod(azymut_slonca, elewacja_slonca):
+    if azymut_slonca <= 160: # Po przekroczeniu azymutu 160 cień drzewa jest nakierowany poza dach
+        kat_cienia = math.degrees(math.atan((wysokosc_drzewa - wysokosc_budynku) / odleglosc_drzewa))
+        if elewacja_slonca < kat_cienia: # Zawsze będzie w cieniu na tej płaszczyźnie, ze względu na niską elewację
+            return 0.4  # Redukcja o 60%
+    return 1.0
 
 
-# Załaduj dane historyczne GHI i temperatury z pliku JSON
+# Wczytaj dane nasłonecznienia z pliku JSON
 with open('dane_historyczne/stan_naslonecznienia_2024.json', 'r') as f:
     dane_naslonecznienia = json.load(f)
 
-# Załaduj dane historyczne generacji prądu z pliku CSV
+# Wczytaj rzeczywiste dane generacji prądu
 dane_generacji = pd.read_csv('dane_historyczne/generacja_pradu_2024.csv')
-
-dane_generacji['Data'] = pd.to_datetime(dane_generacji['Data'], format='%A, %B %d, %Y')  # Konwersja na typ daty
-dane_generacji.set_index('Data', inplace=True)  # Ustawienie daty jako indeksu
+dane_generacji['Data'] = pd.to_datetime(dane_generacji['Data'])
+dane_generacji.set_index('Data', inplace=True)
 
 # Analiza danych
 wyniki = []
-dane_naslonecznienia = dane_naslonecznienia["estimated_actuals"]  # Dostosowanie do nowego formatu JSON
+for wpis in dane_naslonecznienia['estimated_actuals']:
+    data_godzina = pd.to_datetime(wpis['period_end']).tz_convert(None)
+    ghi = wpis['ghi'] / 1000  # kW/m²
+    temperatura = wpis['air_temp']
 
-for wpis in dane_naslonecznienia:
-    data_godzina = pd.to_datetime(wpis['period_end']).tz_convert(None)  # Data i godzina
-    ghi = wpis['ghi'] / 1000  # Konwersja GHI z W/m² na kW/m²
-    temperatura = wpis['air_temp']  # Temperatura w °C
+    # Filtruj odpowiedni czas z danych elewacji
+    elewacje_azymuty = dane_elewacja_azymut[
+        dane_elewacja_azymut['Date'] == data_godzina.date().strftime('%Y-%m-%d')]
 
-    wspolczynnik_cienia = uwzglednij_cien(data_godzina)  # Uwzględnienie cienia
+    for _, row in elewacje_azymuty.iterrows():
+        if row[f'E {data_godzina.hour:02}:00:00'] == '--':
+            wspolczynnik_cienia = 0
+        else:
+            elewacja = float(row[f'E {data_godzina.hour:02}:00:00'])
+            azymut_slonca = float(row[f'A {data_godzina.hour:02}:00:00'])
+            wspolczynnik_cienia = oblicz_cien_wschod(azymut_slonca, elewacja)
 
-    energia = oblicz_generacje_energii(
-        ghi=ghi,
-        temperatura=temperatura,
-        kat_nachylenia=kat_nachylenia,
-        azymut=azymut,
-        sprawnosc=sprawnosc,
-        powierzchnia=pole_instalacji,  # Całkowite pole instalacji
-        straty_systemowe=straty_systemowe,
-        wspolczynnik_cienia=wspolczynnik_cienia
-    )
+        energia = oblicz_generacje_energii(
+            ghi=ghi,
+            temperatura=temperatura,
+            kat_nachylenia=kat_nachylenia,
+            azymut=azymut,
+            sprawnosc=sprawnosc,
+            powierzchnia=pole_instalacji,
+            straty_systemowe=straty_systemowe,
+            wspolczynnik_cienia=wspolczynnik_cienia
+        )
 
-    # Dodanie lub aktualizacja danych dla danej daty
-    if wyniki and wyniki[-1]['Data'] == data_godzina.floor('D'):
-        wyniki[-1]['Symulowana generacja (kWh)'] += energia
-    else:
-        wyniki.append({
-            'Data': data_godzina.floor('D'),
-            'Symulowana generacja (kWh)': energia,
-            'Rzeczywista generacja (kWh)': 0  # Placeholder, uzupełnimy później
-        })
+        if wyniki and wyniki[-1]['Data'] == data_godzina.floor('D'):
+            wyniki[-1]['Symulowana generacja (kWh)'] += energia
+        else:
+            wyniki.append({
+                'Data': data_godzina.floor('D'),
+                'Symulowana generacja (kWh)': energia,
+                'Rzeczywista generacja (kWh)': 0
+            })
 
-# Uzupełnienie rzeczywistych danych generacji z CSV
+# Dopasowanie rzeczywistych danych generacji
 for wynik in wyniki:
     data = wynik['Data']
     if data in dane_generacji.index:
@@ -134,11 +120,21 @@ wyniki_df = pd.DataFrame(wyniki)
 
 # Obliczanie średniego odchylenia prognozy od rzeczywistych danych dla miesięcy 5-12
 wyniki_df['Miesiąc'] = wyniki_df['Data'].dt.month
-wyniki_maj_grudzien = wyniki_df[(wyniki_df['Miesiąc'] >= 5) & (wyniki_df['Miesiąc'] <= 12)]
+wyniki_maj_grudzien = wyniki_df[(wyniki_df['Miesiąc'] >= 5)]
 srednie_odchylenie = wyniki_maj_grudzien['Różnica (kWh)'].abs().mean()
+# Obliczenie największego odchylenia
+najwieksze_odchylenie = wyniki_maj_grudzien.loc[wyniki_maj_grudzien['Różnica (kWh)'].abs().idxmax()]
+
+# Wyświetlenie szczegółów największego odchylenia
+print("\nNajwiększe odchylenie:")
+print(f"Data: {najwieksze_odchylenie['Data']}")
+print(f"Symulowana generacja: {najwieksze_odchylenie['Symulowana generacja (kWh)']:.2f} kWh")
+print(f"Rzeczywista generacja: {najwieksze_odchylenie['Rzeczywista generacja (kWh)']:.2f} kWh")
+print(f"Odchylenie: {najwieksze_odchylenie['Różnica (kWh)']:.2f} kWh")
+print(f"Odchylenie w procencie symulowanej generacji: {(najwieksze_odchylenie['Różnica (kWh)']/najwieksze_odchylenie['Symulowana generacja (kWh)']):.2f} %")
 print(f"Średnie odchylenie prognozy dla miesięcy 5-12: {srednie_odchylenie:.2f} kWh")
 
-# Zapis wyników do pliku CSV
+# Eksport wyników
+wyniki_df = pd.DataFrame(wyniki)
 wyniki_df.to_csv('dane_historyczne/wyniki_porownania_generacji.csv', index=False)
-
 print("Analiza zakończona. Wyniki zapisano w 'wyniki_porownania_generacji.csv'.")
