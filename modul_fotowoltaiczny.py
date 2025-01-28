@@ -1,65 +1,88 @@
+import math
+
 class ModulFotowoltaiczny:
-    def __init__(self, model, ilosc_ogniw, sprawnosc, wymiary, moc_mppt, moc_nmot, wsp_temp, roczny_spadek_mocy, material_ogniw, typ_szyby, obciazenie_mechaniczne):
+    def __init__(self, model, sprawnosc, wymiary, moc_mppt, ilosc_paneli, straty_systemowe,
+                 material_ogniw, typ_szyby, obciazenie_mechaniczne, kat_nachylenia, azymut):
         """
         Inicjalizuje obiekt klasy ModulFotowoltaiczny.
 
         :param model: Model modułu (str)
-        :param ilosc_ogniw: Liczba ogniw w module (int)
         :param sprawnosc: Sprawność modułu (%) (float)
         :param wymiary: Wymiary modułu (szerokość, wysokość, grubość) w metrach (tuple(float, float, float))
-        :param moc_mppt: Moc przy MPPT (W) (float)
-        :param moc_nmot: Moc przy NMOT/NCOT (W) (float)
-        :param wsp_temp: Współczynniki temperaturowe (dict)
-        :param roczny_spadek_mocy: Roczny spadek mocy (%) (float)
+        :param moc_mppt: Moc przy MPPT dla pojedynczego panelu (W) (float)
+        :param ilosc_paneli: Liczba paneli w instalacji (int)
+        :param straty_systemowe: Straty systemowe (%) (float)
         :param material_ogniw: Materiał ogniw (str, np. "monokrystaliczny", "polikrystaliczny")
         :param typ_szyby: Typ szyby ochronnej (str, np. "hartowana")
         :param obciazenie_mechaniczne: Maksymalne obciążenie mechaniczne (Pa) (float)
+        :param kat_nachylenia: Kąt nachylenia instalacji (stopnie) (float)
+        :param azymut: Azymut instalacji (stopnie) (float)
         """
         self.model = model
-        self.ilosc_ogniw = ilosc_ogniw
         self.sprawnosc = sprawnosc / 100  # Konwersja na wartość dziesiętną
         self.wymiary = wymiary
         self.moc_mppt = moc_mppt
-        self.moc_nmot = moc_nmot
-        self.wsp_temp = wsp_temp  # Oczekiwany format: {"Voc": -0.003, "Pmax": -0.0045}
-        self.roczny_spadek_mocy = roczny_spadek_mocy / 100  # Konwersja na wartość dziesiętną
+        self.ilosc_paneli = ilosc_paneli
+        self.straty_systemowe = straty_systemowe / 100  # Konwersja na wartość dziesiętną
         self.material_ogniw = material_ogniw
         self.typ_szyby = typ_szyby
         self.obciazenie_mechaniczne = obciazenie_mechaniczne
+        self.kat_nachylenia = kat_nachylenia
+        self.azymut = azymut
 
-    def generuj_prad(self, naslonecznienie, temperatura, lata_uzytkowania=0):
+        szerokosc, wysokosc, _ = wymiary
+        self.pole_instalacji = szerokosc * wysokosc * ilosc_paneli  # m²
+        self.moc_calowita_znamionowa = moc_mppt * ilosc_paneli / 1000  # kW
+
+    def generuj_prad(self, ghi, temperatura, azymut_slonca, wspolczynnik_cienia=1.0, wsp_temp_pmax=-0.37):
         """
         Generuje wartość prądu w zależności od warunków.
 
-        :param naslonecznienie: Poziom nasłonecznienia (kW/m^2)
+        :param ghi: Globalne promieniowanie słoneczne (kWh/m²)
         :param temperatura: Temperatura otoczenia (°C)
-        :param lata_uzytkowania: Ilość lat od instalacji modułu (int, domyślnie 0)
+        :param azymut_slonca: Azymut słońca względem południa (°)
+        :param wspolczynnik_cienia: Redukcja efektywności z powodu cienia (0-1)
+        :param wsp_temp_pmax: Współczynnik temperaturowy Pmax (%/°C)
         :return: Generowana moc w watach (float)
         """
-        # Uwzględnij roczny spadek mocy
-        moc_obnizona = self.moc_mppt * ((1 - self.roczny_spadek_mocy) ** lata_uzytkowania)
+        # Sprawdź, czy panel znajduje się w cieniu
+        if azymut_slonca < 160:
+            wspolczynnik_cienia *= 0.6  # Redukcja efektywności do 60%
 
-        # Uwzględnij wpływ temperatury na moc
-        delta_temp = temperatura - 25  # Referencyjna temperatura to 25°C
-        wsp_temp_pmax = self.wsp_temp.get("Pmax", 0)  # Domyślnie brak wpływu, jeśli klucz nie istnieje
-        moc_temperatura = moc_obnizona * (1 + wsp_temp_pmax * delta_temp)
+        temperatura_stc = 25.0  # Standardowa temperatura odniesienia w °C
+        korekta_temperaturowa = 1 + wsp_temp_pmax / 100 * (temperatura - temperatura_stc)
+        sprawnosc_skorygowana = self.sprawnosc * korekta_temperaturowa
 
-        # Uwzględnij nasłonecznienie
-        moc_koncowa = moc_temperatura * (naslonecznienie / 1.0)  # 1.0 kW/m^2 to standardowe nasłonecznienie
+        # Ustal współczynnik orientacji
+        wspolczynnik_orientacji = (
+            math.cos(math.radians(self.kat_nachylenia)) *
+            math.cos(math.radians(self.azymut - 180))
+        )
 
-        return max(moc_koncowa, 0)  # Moc nie może być ujemna
+        # Efektywne promieniowanie słoneczne
+        efektywne_promieniowanie = ghi * self.pole_instalacji * wspolczynnik_orientacji
+
+        # Efektywna moc z uwzględnieniem strat i cienia
+        efektywna_moc = (
+            efektywne_promieniowanie * sprawnosc_skorygowana *
+            (1 - self.straty_systemowe) * wspolczynnik_cienia
+        )
+
+        return max(efektywna_moc, 0)  # Moc nie może być ujemna
 
     def __str__(self):
         szerokosc, wysokosc, grubosc = self.wymiary
         return (
             f"Moduł fotowoltaiczny: {self.model}\n"
-            f"  Ilość ogniw: {self.ilosc_ogniw}\n"
             f"  Sprawność: {self.sprawnosc * 100:.2f}%\n"
             f"  Wymiary: {szerokosc} m x {wysokosc} m x {grubosc} m\n"
-            f"  Moc MPPT: {self.moc_mppt} W\n"
-            f"  Moc NMOT: {self.moc_nmot} W\n"
-            f"  Roczny spadek mocy: {self.roczny_spadek_mocy * 100:.2f}%\n"
-            f"  Współczynniki temperaturowe: {self.wsp_temp}\n"
+            f"  Moc MPPT (pojedynczy panel): {self.moc_mppt} W\n"
+            f"  Ilość paneli: {self.ilosc_paneli}\n"
+            f"  Moc całkowita znamionowa: {self.moc_calowita_znamionowa:.2f} kW\n"
+            f"  Pole instalacji: {self.pole_instalacji:.2f} m²\n"
+            f"  Straty systemowe: {self.straty_systemowe * 100:.2f}%\n"
+            f"  Kąt nachylenia: {self.kat_nachylenia}°\n"
+            f"  Azymut: {self.azymut}°\n"
             f"  Materiał ogniw: {self.material_ogniw}\n"
             f"  Typ szyby: {self.typ_szyby}\n"
             f"  Obciążenie mechaniczne: {self.obciazenie_mechaniczne} Pa\n"

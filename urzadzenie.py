@@ -1,6 +1,6 @@
 class Urzadzenie:
     def __init__(self, nazwa, model, klasa_energetyczna, roczne_zuzycie_energii, moc_namionowa,
-                 zuzycie_pradu_na_cykl, dlugosc_cyklu, pobor_mocy_czuwania):
+                 zuzycie_pradu_na_cykl=0, dlugosc_cyklu=0, pobor_mocy_czuwania=0):
         """
         Inicjalizuje obiekt klasy Urzadzenie.
 
