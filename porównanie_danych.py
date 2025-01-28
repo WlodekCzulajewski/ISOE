@@ -3,11 +3,11 @@ import pandas as pd
 import math
 
 
-# Funkcja do obliczenia produkcji energii na podstawie GHI
-def oblicz_generacje_energii(ghi, temperatura, kat_nachylenia, azymut, sprawnosc, powierzchnia, straty_systemowe, wspolczynnik_cienia):
+# Funkcja do obliczenia produkcji energii na podstawie GHI z uwzględnieniem wpływu temperatury
+def oblicz_generacje_energii(ghi, temperatura, kat_nachylenia, azymut, sprawnosc, powierzchnia, straty_systemowe,
+                             wspolczynnik_cienia, pmax_temp_coeff):
     """
-    Funkcja do obliczenia produkcji energii elektrycznej na podstawie GHI.
-
+    Funkcja do obliczenia produkcji energii elektrycznej na podstawie GHI z uwzględnieniem temperatury.
     Parameters:
     ghi: float - Globalne promieniowanie słoneczne (kWh/m²)
     temperatura: float - Temperatura powietrza (°C)
@@ -17,34 +17,44 @@ def oblicz_generacje_energii(ghi, temperatura, kat_nachylenia, azymut, sprawnosc
     powierzchnia: float - Całkowita powierzchnia instalacji (m²)
     straty_systemowe: float - Straty systemowe (0-1)
     wspolczynnik_cienia: float - Redukcja efektywności z powodu cienia (0-1)
+    pmax_temp_coeff: float - Współczynnik temperaturowy Pmax (%/°C)
 
     Returns:
     float - Szacowana ilość wyprodukowanej energii (kWh)
     """
-    wspolczynnik_orientacji = math.cos(math.radians(kat_nachylenia)) * math.cos(math.radians(azymut - 180))
-    efektywne_promieniowanie = ghi * powierzchnia * wspolczynnik_orientacji
-    efektywna_moc = efektywne_promieniowanie * sprawnosc * (1 - straty_systemowe) * wspolczynnik_cienia
+
+    temperatura_stc = 25.0  # °C Temperatura odniesienia paneli (standardowe warunki testowe - STC)
+    korekta_temperaturowa = 1 + pmax_temp_coeff / 100 * (temperatura - temperatura_stc) # Korekta sprawności w zależności od temperatury
+    sprawnosc_skorygowana = sprawnosc * korekta_temperaturowa # Skorygowane sprawność panelu
+    wspolczynnik_orientacji = math.cos(math.radians(kat_nachylenia)) * math.cos(math.radians(azymut - 180)) # Ustal współczynnik orientacji
+    efektywne_promieniowanie = ghi * powierzchnia * wspolczynnik_orientacji # Efektywne promieniowanie
+    efektywna_moc = efektywne_promieniowanie * sprawnosc_skorygowana * (1 - straty_systemowe) * wspolczynnik_cienia # Uwzględnienie cienia i strat systemowych
+
     return max(efektywna_moc, 0)
 
+# Wczytaj dane nasłonecznienia z pliku JSON
+with open('dane_historyczne/stan_naslonecznienia_2024.json', 'r') as f:
+    dane_naslonecznienia = json.load(f)
 
 # Parametry paneli fotowoltaicznych
 moc_pojedynczego_panelu = 320  # W
 liczba_paneli = 18
 szerokosc_panelu = 0.992  # m
-dlugosc_panelu = 1.668  # m
+dlugosc_panelu = 1.640  # m
 moc_nominalna = (moc_pojedynczego_panelu * liczba_paneli) / 1000  # kW
 pole_instalacji = liczba_paneli * szerokosc_panelu * dlugosc_panelu  # m²
+wspolczynnik_pmax = -0.37
 
 # Parametry instalacji fotowoltaicznej
 kat_nachylenia = 26  # stopnie
 azymut = 180  # stopnie
-sprawnosc = 0.1934  # 19.34% sprawności
-straty_systemowe = 0.14  # 14% strat dla instalacji 4-letniej
+sprawnosc = 0.1955  # 19.55% sprawności
+straty_systemowe = 0.10  # 10% przyjęte straty dla instalacji 4-letniej
 
 # Parametry dla cienia
-wysokosc_budynku = 13  # m
-wysokosc_drzewa = 27  # m
-odleglosc_drzewa = 10  # m
+wysokosc_budynku = 12  # m
+wysokosc_drzewa = 21  # m
+odleglosc_drzewa = 8  # m
 
 # Wczytaj dane elewacji i azymutu słońca
 dane_elewacja_azymut = pd.read_csv('dane_historyczne/roczna_elewacja_azymut_slonca_2024.csv', delimiter=',')
@@ -56,11 +66,6 @@ def oblicz_cien_wschod(azymut_slonca, elewacja_slonca):
         if elewacja_slonca < kat_cienia: # Zawsze będzie w cieniu na tej płaszczyźnie, ze względu na niską elewację
             return 0.4  # Redukcja o 60%
     return 1.0
-
-
-# Wczytaj dane nasłonecznienia z pliku JSON
-with open('dane_historyczne/stan_naslonecznienia_2024.json', 'r') as f:
-    dane_naslonecznienia = json.load(f)
 
 # Wczytaj rzeczywiste dane generacji prądu
 dane_generacji = pd.read_csv('dane_historyczne/generacja_pradu_2024.csv')
@@ -94,7 +99,8 @@ for wpis in dane_naslonecznienia['estimated_actuals']:
             sprawnosc=sprawnosc,
             powierzchnia=pole_instalacji,
             straty_systemowe=straty_systemowe,
-            wspolczynnik_cienia=wspolczynnik_cienia
+            wspolczynnik_cienia=wspolczynnik_cienia,
+            pmax_temp_coeff=wspolczynnik_pmax
         )
 
         if wyniki and wyniki[-1]['Data'] == data_godzina.floor('D'):
