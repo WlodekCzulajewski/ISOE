@@ -56,18 +56,32 @@ class InteligentnySystemOszczedzaniaEnergii:
 
     def zaplanuj_harmonogram(self, prognoza):
         harmonogram = {urzadzenie: [] for urzadzenie in self.urzadzenia}
+        dzien = datetime.now().day
+
+        # Sortowanie prognozy według dostępnej generacji prądu
+        prognoza.sort(key=lambda x: x["ghi"], reverse=True)
+
+        godzina_zmywarki = prognoza[0]["period_end"]  # Najlepsza godzina dla zmywarki
+        godzina_pralki = prognoza[1]["period_end"] if dzien % 2 == 0 else None  # Co dwa dni
+        godzina_suszarki = prognoza[2]["period_end"] if dzien % 2 == 1 else None  # W inne dni niż pralka
 
         for godzina, prognoza_godzinna in enumerate(prognoza):
-            generacja = self.modul_fotowoltaiczny.generuj_prad(
-                prognoza_godzinna["ghi"], prognoza_godzinna["temperatura"], prognoza_godzinna.get("azymut_slonca", 180)
-            )
-            potencjalne_zuzycie = sum([urzadzenie.zuzycie_pradu_na_cykl for urzadzenie in self.urzadzenia])
+            czas = datetime.fromisoformat(prognoza_godzinna["period_end"].replace("Z", "+00:00")).hour
 
-            if generacja >= potencjalne_zuzycie:
+            if prognoza_godzinna["period_end"] == godzina_zmywarki:
                 for urzadzenie in self.urzadzenia:
-                    harmonogram[urzadzenie].append(godzina)
-            else:
-                break
+                    if urzadzenie.nazwa == "Zmywarka":
+                        harmonogram[urzadzenie].append(godzina)
+
+            if prognoza_godzinna["period_end"] == godzina_pralki:
+                for urzadzenie in self.urzadzenia:
+                    if urzadzenie.nazwa == "Pralka":
+                        harmonogram[urzadzenie].append(godzina)
+
+            if prognoza_godzinna["period_end"] == godzina_suszarki:
+                for urzadzenie in self.urzadzenia:
+                    if urzadzenie.nazwa == "Suszarka":
+                        harmonogram[urzadzenie].append(godzina)
 
         return harmonogram
 
@@ -75,7 +89,7 @@ class InteligentnySystemOszczedzaniaEnergii:
         harmonogram = self.zaplanuj_harmonogram(prognoza)
         for godzina, prognoza_godzinna in enumerate(prognoza):
             generacja = self.aktualizuj_generacje_pradu(
-                prognoza_godzinna["ghi"], prognoza_godzinna["temperatura"], prognoza_godzinna.get("azymut_slonca", 180)
+                prognoza_godzinna["ghi"], prognoza_godzinna["air_temp"], prognoza_godzinna["azimuth"]
             )
             zuzycie = self.aktualizuj_zuzycie_urzadzen(harmonogram, godzina)
             self.zarzadzaj_przeplywem_energii(generacja, zuzycie)
@@ -122,7 +136,7 @@ modul = ModulFotowoltaiczny(
 bateria = Bateria(
     model="BAT-5000",
     rodzaj="Li-ion",
-    pojemnosc=10,  # kWh
+    pojemnosc=10000,  # Wh
     moc_namionowa=5000,  # W
     cykl_zycia=5000,
     napiecie=48,  # V
@@ -134,21 +148,21 @@ bateria = Bateria(
 lodowka = Urzadzenie(
     nazwa="Lodówka",
     model="LG 606L GSJ361DIDV",
-    klasa_energetyczna="A++",
-    roczne_zuzycie_energii=412.45,
+    klasa_energetyczna="F",
+    roczne_zuzycie_energii=419,
     moc_namionowa=113,
-    zuzycie_pradu_na_cykl=1.13,
+    zuzycie_pradu_na_cykl=1130,
     dlugosc_cyklu=1440,
-    pobor_mocy_czuwania=0.046
+    pobor_mocy_czuwania=47
 )
 
 pralka = Urzadzenie(
     nazwa="Pralka",
     model="LG F4WV709S1BE",
-    klasa_energetyczna="A+++",
-    roczne_zuzycie_energii=185.4,
+    klasa_energetyczna="A",
+    roczne_zuzycie_energii=0,
     moc_namionowa=2000,
-    zuzycie_pradu_na_cykl=0.509,
+    zuzycie_pradu_na_cykl=509,
     dlugosc_cyklu=120,
     pobor_mocy_czuwania=0.5
 )
@@ -156,21 +170,21 @@ pralka = Urzadzenie(
 suszarka = Urzadzenie(
     nazwa="Suszarka",
     model="WHIRLPOOL W6 D84WB EE",
-    klasa_energetyczna="A++",
-    roczne_zuzycie_energii=235.2,
+    klasa_energetyczna="A+++",
+    roczne_zuzycie_energii=176,
     moc_namionowa=1400,
-    zuzycie_pradu_na_cykl=1.41,
+    zuzycie_pradu_na_cykl=1410,
     dlugosc_cyklu=90,
-    pobor_mocy_czuwania=0.5
+    pobor_mocy_czuwania=0.18
 )
 
 zmywarka = Urzadzenie(
     nazwa="Zmywarka",
     model="BOSCH SPS4EMI60E",
-    klasa_energetyczna="A++",
-    roczne_zuzycie_energii=294,
+    klasa_energetyczna="D",
+    roczne_zuzycie_energii=0,
     moc_namionowa=1120,
-    zuzycie_pradu_na_cykl=1.12,
+    zuzycie_pradu_na_cykl=1120,
     dlugosc_cyklu=180,
     pobor_mocy_czuwania=0.5
 )
@@ -179,3 +193,4 @@ system = InteligentnySystemOszczedzaniaEnergii(modul, bateria, [lodowka, pralka,
 prognoza = pobierz_prognoze()
 system.symuluj_dobe(prognoza)
 system.zapisz_log_do_csv("dane_biezace/og_systemu.csv")
+print(system.log)

@@ -15,35 +15,44 @@ def pobierz_prognoze():
     response = requests.get(url=SC_ENDPOINT, headers=header)
     response.raise_for_status()
 
-    # Convert raw data to JSON.
+    # Konwersja surowych danych na format JSON
     data = response.json()
 
-    # Get the current time in UTC and set the end time to 24 hours later
+    # Pobranie aktualnego czasu w UTC i ustawienie końca na 24 godziny później
     current_time = datetime.now(timezone.utc)
     end_time = current_time + timedelta(hours=24)
 
-    # Filter data to include only the next 24 hours and hourly measurements
+    # Filtrowanie danych, aby uwzględnić tylko kolejne 24 godziny i pomiary co godzinę
     filtered_data = []
     for forecast in data['forecasts']:
         forecast_time = datetime.fromisoformat(forecast['period_end'].replace('Z', '+00:00'))
         if current_time <= forecast_time <= end_time and forecast_time.minute == 0:
             filtered_data.append(forecast)
 
-    # Append filtered data to an existing JSON file
+    # Zachowanie tylko danych w odstępach godzinnych
+    hourly_data = []
+    last_hour = None
+    for entry in filtered_data:
+        entry_hour = datetime.fromisoformat(entry['period_end'].replace('Z', '+00:00')).hour
+        if entry_hour != last_hour:
+            hourly_data.append(entry)
+            last_hour = entry_hour
+
+    # Dopisanie przefiltrowanych danych do istniejącego pliku JSON
     try:
         with open('dane_biezace/prognoza_naslonecznienia.json', 'r+') as file:
             existing_data = json.load(file)
             if isinstance(existing_data, list):
-                existing_data.extend(filtered_data)
+                existing_data.extend(hourly_data)
             else:
-                existing_data = filtered_data
+                existing_data = hourly_data
 
-            # Move file pointer to the beginning to overwrite
+            # Przesunięcie wskaźnika pliku na początek w celu nadpisania
             file.seek(0)
             json.dump(existing_data, file, indent=4)
     except FileNotFoundError:
-        # Create a new file if it does not exist
+        # Utworzenie nowego pliku, jeśli nie istnieje
         with open('dane_biezace/prognoza_naslonecznienia.json', 'w') as file:
-            json.dump(filtered_data, file, indent=4)
+            json.dump(hourly_data, file, indent=4)
 
-    return filtered_data
+    return hourly_data

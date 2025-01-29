@@ -9,9 +9,9 @@ class Urzadzenie:
         :param klasa_energetyczna: Klasa energetyczna urządzenia (str, np. "A+++", "A++")
         :param roczne_zuzycie_energii: Roczne zużycie energii (kWh) (float)
         :param moc_namionowa: Moc znamionowa urządzenia (W) (float)
-        :param zuzycie_pradu_na_cykl: Zużycie energii na cykl (kWh) (float)
+        :param zuzycie_pradu_na_cykl: Zużycie energii na cykl (Wh) (float)
         :param dlugosc_cyklu: Długość cyklu pracy (w minutach) (int)
-        :param pobor_mocy_czuwania: Pobór mocy w trybie czuwania (W) (float)
+        :param pobor_mocy_czuwania: Pobór mocy w trybie czuwania (Wh) (float)
         """
         self.nazwa = nazwa
         self.model = model
@@ -28,9 +28,9 @@ class Urzadzenie:
 
         :param tryb_czuwania: Czy urządzenie jest w trybie czuwania (bool)
         :param liczba_cykli: Liczba wykonanych cykli pracy (int)
-        :return: Zużyta energia w kWh (float)
+        :return: Zużyta energia w Wh (float)
         """
         if tryb_czuwania:
-            return (self.pobor_mocy_czuwania / 1000) * (24 / 60)  # Zużycie energii na minutę w kWh
+            return self.pobor_mocy_czuwania  # Zużycie energii na minutę w Wh
         else:
-            return liczba_cykli * self.zuzycie_pradu_na_cykl
+            return liczba_cykli * self.zuzycie_pradu_na_cykl # (Wh) (float)

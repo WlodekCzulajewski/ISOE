@@ -5,8 +5,8 @@ class Bateria:
 
         :param model: Model akumulatora (str)
         :param rodzaj: Rodzaj akumulatora (str, np. "litowo-jonowy", "kwasowo-ołowiowy")
-        :param pojemnosc: Pojemność baterii (kWh) (float)
-        :param moc_namionowa: Moc znamionowa (kW) (float)
+        :param pojemnosc: Pojemność baterii (Wh) (float)
+        :param moc_namionowa: Moc znamionowa (W) (float)
         :param cykl_zycia: Liczba pełnych cykli ładowania i rozładowania (int)
         :param napiecie: Napięcie pracy (V) (float)
         :param wymiary: Wymiary baterii (szerokość, wysokość, głębokość) w metrach (tuple(float, float, float))
@@ -22,15 +22,15 @@ class Bateria:
         self.wymiary = wymiary
         self.prad_rozladowywania = prad_rozladowywania
         self.czas_ladowania = czas_ladowania
-        self.aktualny_stan = pojemnosc  # Domyślnie bateria jest w pełni naładowana
+        self.aktualny_stan = 0  # Domyślnie bateria jest w pełni naładowana
 
     def rozladowanie(self, moc, czas):
         """
         Symuluje oddanie prądu przez baterię.
 
-        :param moc: Moc pobierana z baterii (kW)
+        :param moc: Moc pobierana z baterii (W)
         :param czas: Czas pobierania mocy (h)
-        :return: Pozostała energia w baterii (kWh)
+        :return: Pozostała energia w baterii (Wh)
         """
         energia_do_oddania = moc * czas
         if energia_do_oddania > self.aktualny_stan:
@@ -43,8 +43,8 @@ class Bateria:
         """
         Symuluje ładowanie baterii.
 
-        :param energia: Ilość energii dostarczanej do baterii (kWh)
-        :return: Aktualny stan baterii (kWh)
+        :param energia: Ilość energii dostarczanej do baterii (Wh)
+        :return: Aktualny stan baterii (Wh)
         """
         self.aktualny_stan += energia
         if self.aktualny_stan > self.pojemnosc:

@@ -33,7 +33,7 @@ def oblicz_generacje_energii(ghi, temperatura, kat_nachylenia, azymut, sprawnosc
     return max(efektywna_moc, 0)
 
 # Wczytaj dane nasłonecznienia z pliku JSON
-with open('dane_historyczne/stan_naslonecznienia_2024.json', 'r') as f:
+with open('stan_naslonecznienia_2024.json', 'r') as f:
     dane_naslonecznienia = json.load(f)
 
 # Parametry paneli fotowoltaicznych
@@ -57,7 +57,7 @@ wysokosc_drzewa = 21  # m
 odleglosc_drzewa = 8  # m
 
 # Wczytaj dane elewacji i azymutu słońca
-dane_elewacja_azymut = pd.read_csv('dane_historyczne/roczna_elewacja_azymut_slonca_2024.csv', delimiter=',')
+dane_elewacja_azymut = pd.read_csv('roczna_elewacja_azymut_slonca_2024.csv', delimiter=',')
 
 # Funkcja do obliczenia współczynnika cienia dla paneli wschodnich
 def oblicz_cien_wschod(azymut_slonca, elewacja_slonca):
@@ -68,7 +68,7 @@ def oblicz_cien_wschod(azymut_slonca, elewacja_slonca):
     return 1.0
 
 # Wczytaj rzeczywiste dane generacji prądu
-dane_generacji = pd.read_csv('dane_historyczne/generacja_pradu_2024.csv')
+dane_generacji = pd.read_csv('generacja_pradu_2024.csv')
 dane_generacji['Data'] = pd.to_datetime(dane_generacji['Data'])
 dane_generacji.set_index('Data', inplace=True)
 
